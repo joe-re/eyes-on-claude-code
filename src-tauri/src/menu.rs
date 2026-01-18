@@ -136,12 +136,16 @@ pub fn build_app_menu<R: Runtime>(
 ) -> tauri::Result<Menu<R>> {
     // Eyes on Claude Code menu (app menu)
     let version = app.config().version.clone();
+    let clear_all_sessions =
+        MenuItemBuilder::with_id("clear_sessions", "Clear All Sessions").build(app)?;
     let app_menu = SubmenuBuilder::new(app, "Eyes on Claude Code")
         .about(Some(AboutMetadata {
             name: Some("Eyes on Claude Code".to_string()),
             version,
             ..Default::default()
         }))
+        .separator()
+        .item(&clear_all_sessions)
         .separator()
         .quit()
         .build()?;

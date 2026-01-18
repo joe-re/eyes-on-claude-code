@@ -300,6 +300,17 @@ fn main() {
                             eprintln!("[eocc] Failed to acquire lock for sound_enabled: {:?}", e)
                         }
                     },
+                    "clear_sessions" => match state.lock() {
+                        Ok(mut state_guard) => {
+                            state_guard.sessions.clear();
+                            update_tray_and_badge(app, &state_guard);
+                            emit_state_update(app, &state_guard);
+                            save_runtime_state(app, &state_guard);
+                        }
+                        Err(e) => {
+                            eprintln!("[eocc] Failed to acquire lock for clear_sessions: {:?}", e)
+                        }
+                    },
                     other => {
                         if let Some((is_active, opacity)) = parse_opacity_menu_id(other) {
                             match state.lock() {

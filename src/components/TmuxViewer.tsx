@@ -34,6 +34,7 @@ export const TmuxViewer = ({ paneId }: TmuxViewerProps) => {
   const isMountedRef = useRef(true);
   const flushTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const pendingTextRef = useRef('');
+  const userScrolledUpRef = useRef(false);
 
   const ansiUp = useMemo(() => {
     const instance = new AnsiUp();
@@ -369,7 +370,7 @@ export const TmuxViewer = ({ paneId }: TmuxViewerProps) => {
   }, [loadContent]);
 
   useEffect(() => {
-    if (contentRef.current) {
+    if (contentRef.current && !userScrolledUpRef.current) {
       contentRef.current.scrollTop = contentRef.current.scrollHeight;
     }
   }, [content]);
@@ -399,7 +400,12 @@ export const TmuxViewer = ({ paneId }: TmuxViewerProps) => {
               className="ansi-content h-full overflow-y-auto overflow-x-auto whitespace-pre rounded bg-black/50 p-3 font-mono text-sm text-text-primary select-text cursor-text"
               dangerouslySetInnerHTML={{ __html: htmlContent || '(empty)' }}
               onClick={(e) => e.stopPropagation()}
-              onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+              onScroll={(e) => {
+                const el = e.currentTarget;
+                setScrollTop(el.scrollTop);
+                const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 50;
+                userScrolledUpRef.current = !isAtBottom;
+              }}
               onCopy={(e) => {
                 const selection = window.getSelection();
                 if (selection && selection.toString()) {
