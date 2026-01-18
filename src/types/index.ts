@@ -1,6 +1,9 @@
 // Session status matching Rust enum
 export type SessionStatus = 'Active' | 'WaitingPermission' | 'WaitingInput' | 'Completed';
 
+// Priority matching Rust enum (lowercase from serde)
+export type Priority = 'high' | 'medium' | 'low' | 'operation';
+
 // Notification type matching Rust enum (snake_case from serde)
 export type NotificationType = 'permission_prompt' | 'idle_prompt' | 'other';
 
@@ -15,12 +18,15 @@ export type EventType =
   | 'unknown';
 
 export interface SessionInfo {
+  session_id: string;
   project_name: string;
   project_dir: string;
   status: SessionStatus;
   last_event: string;
   waiting_for: string;
   tmux_pane: string;
+  custom_name: string;
+  priority: Priority;
 }
 
 export interface EventInfo {
@@ -39,6 +45,7 @@ export interface EventInfo {
 export interface DashboardData {
   sessions: SessionInfo[];
   events: EventInfo[];
+  notes: string;
 }
 
 export interface Settings {
@@ -75,6 +82,13 @@ export interface TmuxPane {
 export interface TmuxPaneSize {
   width: number;
   height: number;
+}
+
+// Tmux cursor position
+export interface TmuxCursorPosition {
+  x: number;
+  y: number;
+  history_size: number;
 }
 
 // Status of each individual hook type

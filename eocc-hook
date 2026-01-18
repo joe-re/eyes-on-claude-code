@@ -47,6 +47,19 @@ function whichCommand(cmd) {
   }
 }
 
+function getTmuxSessionName() {
+  // Only try if we're in a tmux pane
+  if (!process.env.TMUX_PANE) return "";
+  try {
+    return execSync('tmux display-message -p "#{session_name}"', {
+      encoding: "utf8",
+      timeout: 5000,
+    }).trim();
+  } catch {
+    return "";
+  }
+}
+
 async function readStdin() {
   if (process.stdin.isTTY) return "{}";
   const chunks = [];
@@ -75,6 +88,7 @@ async function main() {
   const projectDir = process.env.CLAUDE_PROJECT_DIR || "unknown";
   const projectName = basename(projectDir) || "unknown";
   const tmuxPane = process.env.TMUX_PANE || "";
+  const customName = getTmuxSessionName();
 
   const sessionId = getString(rawInput, "session_id", "unknown");
   const message = getString(rawInput, "message", "");
@@ -109,6 +123,7 @@ async function main() {
     tmux_pane: tmuxPane,
     npx_path: npxPath,
     tmux_path: tmuxPath,
+    custom_name: customName,
   };
 
   const payloadJson = JSON.stringify(payload);

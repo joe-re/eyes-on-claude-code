@@ -3,7 +3,7 @@ use std::io::{BufRead, BufReader};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::settings::get_events_file;
-use crate::state::{AppState, EventInfo, EventType, NotificationType, SessionInfo, SessionStatus};
+use crate::state::{AppState, EventInfo, EventType, NotificationType, Priority, SessionInfo, SessionStatus};
 use crate::tmux::set_cached_tmux_path;
 
 pub fn process_event(state: &mut AppState, event: EventInfo) {
@@ -12,10 +12,15 @@ pub fn process_event(state: &mut AppState, event: EventInfo) {
         state.recent_events.pop_front();
     }
 
-    let key = if event.project_dir.is_empty() {
+    let project_key = if event.project_dir.is_empty() {
         event.project_name.clone()
     } else {
         event.project_dir.clone()
+    };
+    let key = if event.tmux_pane.is_empty() {
+        project_key
+    } else {
+        format!("{}:{}", project_key, event.tmux_pane)
     };
 
     match event.event_type {
@@ -25,12 +30,15 @@ pub fn process_event(state: &mut AppState, event: EventInfo) {
             state.sessions.insert(
                 key,
                 SessionInfo {
+                    session_id: event.session_id.clone(),
                     project_name: event.project_name.clone(),
                     project_dir: event.project_dir.clone(),
                     status: SessionStatus::Active,
                     last_event: event.timestamp.clone(),
                     waiting_for: String::new(),
                     tmux_pane: event.tmux_pane,
+                    custom_name: event.custom_name.clone(),
+                    priority: Priority::default(),
                 },
             );
         }

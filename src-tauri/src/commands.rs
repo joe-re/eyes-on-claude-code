@@ -11,8 +11,8 @@ use crate::git::{get_git_info, GitInfo};
 use crate::persist::save_runtime_state;
 use crate::settings::save_settings;
 use crate::setup::{self, SetupStatus};
-use crate::state::{DashboardData, ManagedState, Settings};
-use crate::tmux::{self, TmuxPane, TmuxPaneSize};
+use crate::state::{DashboardData, ManagedState, Priority, Settings};
+use crate::tmux::{self, TmuxCursorPosition, TmuxPane, TmuxPaneSize};
 use crate::tray::{emit_state_update, update_tray_and_badge};
 
 const LOCK_ERROR: &str = "Failed to acquire state lock";
@@ -25,12 +25,12 @@ pub fn get_dashboard_data(state: tauri::State<'_, ManagedState>) -> Result<Dashb
 
 #[tauri::command]
 pub fn remove_session(
-    project_dir: String,
+    session_key: String,
     state: tauri::State<'_, ManagedState>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
     let mut state_guard = state.0.lock().map_err(|_| LOCK_ERROR)?;
-    state_guard.sessions.remove(&project_dir);
+    state_guard.sessions.remove(&session_key);
     update_tray_and_badge(&app, &state_guard);
     emit_state_update(&app, &state_guard);
     save_runtime_state(&app, &state_guard);
@@ -48,6 +48,53 @@ pub fn clear_all_sessions(
     emit_state_update(&app, &state_guard);
     save_runtime_state(&app, &state_guard);
     Ok(())
+}
+
+#[tauri::command]
+pub fn rename_session(
+    session_key: String,
+    new_name: String,
+    state: tauri::State<'_, ManagedState>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    let mut state_guard = state.0.lock().map_err(|_| LOCK_ERROR)?;
+    if state_guard.rename_session(&session_key, new_name) {
+        update_tray_and_badge(&app, &state_guard);
+        emit_state_update(&app, &state_guard);
+        save_runtime_state(&app, &state_guard);
+        Ok(())
+    } else {
+        Err(format!("Session not found: {}", session_key))
+    }
+}
+
+#[tauri::command]
+pub fn save_notes(
+    notes: String,
+    state: tauri::State<'_, ManagedState>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    let mut state_guard = state.0.lock().map_err(|_| LOCK_ERROR)?;
+    state_guard.notes = notes;
+    save_runtime_state(&app, &state_guard);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_session_priority(
+    session_key: String,
+    priority: Priority,
+    state: tauri::State<'_, ManagedState>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    let mut state_guard = state.0.lock().map_err(|_| LOCK_ERROR)?;
+    if state_guard.set_priority(&session_key, priority) {
+        emit_state_update(&app, &state_guard);
+        save_runtime_state(&app, &state_guard);
+        Ok(())
+    } else {
+        Err(format!("Session not found: {}", session_key))
+    }
 }
 
 #[tauri::command]
@@ -527,7 +574,7 @@ pub fn open_tmux_viewer(pane_id: String, app: tauri::AppHandle) -> Result<(), St
 
     WebviewWindowBuilder::new(&app, &window_label, WebviewUrl::App(url.into()))
         .title(format!("tmux - {}", pane_id))
-        .inner_size(800.0, 600.0)
+        .inner_size(1200.0, 800.0)
         .center()
         .transparent(true)
         .decorations(true)
@@ -560,4 +607,9 @@ pub fn tmux_send_keys(pane_id: String, keys: String) -> Result<(), String> {
 #[tauri::command]
 pub fn tmux_get_pane_size(pane_id: String) -> Result<TmuxPaneSize, String> {
     tmux::get_pane_size(&pane_id)
+}
+
+#[tauri::command]
+pub fn tmux_get_cursor_position(pane_id: String) -> Result<TmuxCursorPosition, String> {
+    tmux::get_cursor_position(&pane_id)
 }

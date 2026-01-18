@@ -32,10 +32,14 @@ export const useWindowDrag = () => {
       // Don't drag when clicking on buttons or interactive elements
       if (
         target.tagName === 'BUTTON' ||
+        target.tagName === 'TEXTAREA' ||
+        target.tagName === 'INPUT' ||
         target.classList.contains('remove-btn') ||
         target.classList.contains('refresh-btn') ||
         target.closest('button') ||
-        target.closest('.remove-btn')
+        target.closest('.remove-btn') ||
+        target.closest('textarea') ||
+        target.closest('input')
       ) {
         return;
       }

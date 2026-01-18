@@ -45,10 +45,24 @@ pub struct EventInfo {
     pub npx_path: String,
     #[serde(default)]
     pub tmux_path: String,
+    #[serde(default)]
+    pub custom_name: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Priority {
+    High,
+    #[default]
+    Medium,
+    Low,
+    Operation,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionInfo {
+    #[serde(default)]
+    pub session_id: String,
     pub project_name: String,
     pub project_dir: String,
     pub status: SessionStatus,
@@ -57,6 +71,10 @@ pub struct SessionInfo {
     pub waiting_for: String,
     #[serde(default)]
     pub tmux_pane: String,
+    #[serde(default)]
+    pub custom_name: String,
+    #[serde(default)]
+    pub priority: Priority,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -82,6 +100,7 @@ impl SessionStatus {
 pub struct DashboardData {
     pub sessions: Vec<SessionInfo>,
     pub events: Vec<EventInfo>,
+    pub notes: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -155,6 +174,7 @@ pub struct AppState {
     pub recent_events: VecDeque<EventInfo>,
     pub settings: Settings,
     pub cached_paths: CachedPaths,
+    pub notes: String,
 }
 
 impl AppState {
@@ -184,6 +204,7 @@ impl AppState {
         DashboardData {
             sessions,
             events: self.recent_events.iter().cloned().collect(),
+            notes: self.notes.clone(),
         }
     }
 
@@ -204,15 +225,42 @@ impl AppState {
                 if !event.tmux_pane.is_empty() {
                     s.tmux_pane = event.tmux_pane.clone();
                 }
+                // Update custom_name from env var if provided and not already set by UI
+                if !event.custom_name.is_empty() && s.custom_name.is_empty() {
+                    s.custom_name = event.custom_name.clone();
+                }
             })
             .or_insert_with(|| SessionInfo {
+                session_id: event.session_id.clone(),
                 project_name: event.project_name.clone(),
                 project_dir: event.project_dir.clone(),
                 status,
                 last_event: event.timestamp.clone(),
                 waiting_for,
                 tmux_pane: event.tmux_pane.clone(),
+                custom_name: event.custom_name.clone(),
+                priority: Priority::default(),
             });
+    }
+
+    /// Rename a session's custom name
+    pub fn rename_session(&mut self, key: &str, new_name: String) -> bool {
+        if let Some(session) = self.sessions.get_mut(key) {
+            session.custom_name = new_name;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Set a session's priority
+    pub fn set_priority(&mut self, key: &str, priority: Priority) -> bool {
+        if let Some(session) = self.sessions.get_mut(key) {
+            session.priority = priority;
+            true
+        } else {
+            false
+        }
     }
 }
 

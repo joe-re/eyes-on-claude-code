@@ -132,6 +132,13 @@ export const TmuxViewer = ({ paneId }: TmuxViewerProps) => {
         return;
       }
 
+      // Cmd+W closes the viewer
+      if (e.metaKey && e.key.toLowerCase() === 'w') {
+        e.preventDefault();
+        handleClose();
+        return;
+      }
+
       const tmuxKey = convertKeyToTmux(e);
       if (tmuxKey) {
         e.preventDefault();

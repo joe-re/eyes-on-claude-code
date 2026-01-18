@@ -1,7 +1,11 @@
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::process::Command;
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
+
+static ANSI_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\x1b\[[0-9;]*[a-zA-Z]").unwrap());
 
 static CACHED_TMUX_PATH: Mutex<Option<String>> = Mutex::new(None);
 
@@ -110,7 +114,7 @@ pub fn capture_pane(pane_id: &str) -> Result<String, String> {
     // -e: include escape sequences for colors
     // -S -: start from the beginning of history
     // -E -: end at the last line
-    run_tmux_command(&[
+    let output = run_tmux_command(&[
         "capture-pane",
         "-p",
         "-e",
@@ -120,7 +124,21 @@ pub fn capture_pane(pane_id: &str) -> Result<String, String> {
         "-",
         "-t",
         pane_id,
-    ])
+    ])?;
+
+    // Trim trailing empty/whitespace-only lines to avoid excessive scrolling
+    // Strip ANSI codes when checking if a line has visible content
+    let lines: Vec<&str> = output.lines().collect();
+    let last_non_empty = lines
+        .iter()
+        .rposition(|line| {
+            let stripped = ANSI_REGEX.replace_all(line, "");
+            !stripped.trim().is_empty()
+        })
+        .map(|i| i + 1)
+        .unwrap_or(0);
+    let trimmed: String = lines[..last_non_empty].join("\n");
+    Ok(format!("{}\n", trimmed))
 }
 
 pub fn send_keys(pane_id: &str, keys: &str) -> Result<(), String> {
@@ -153,4 +171,37 @@ pub fn get_pane_size(pane_id: &str) -> Result<TmuxPaneSize, String> {
         .parse()
         .map_err(|_| format!("Invalid height: {}", parts[1]))?;
     Ok(TmuxPaneSize { width, height })
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TmuxCursorPosition {
+    pub x: u32,
+    pub y: u32,
+    pub history_size: u32,
+}
+
+pub fn get_cursor_position(pane_id: &str) -> Result<TmuxCursorPosition, String> {
+    validate_pane_id(pane_id)?;
+    let output = run_tmux_command(&[
+        "display-message",
+        "-p",
+        "-t",
+        pane_id,
+        "#{cursor_x},#{cursor_y},#{history_size}",
+    ])?;
+    let trimmed = output.trim();
+    let parts: Vec<&str> = trimmed.split(',').collect();
+    if parts.len() != 3 {
+        return Err(format!("Invalid cursor position format: {}", trimmed));
+    }
+    let x = parts[0]
+        .parse()
+        .map_err(|_| format!("Invalid cursor x: {}", parts[0]))?;
+    let y = parts[1]
+        .parse()
+        .map_err(|_| format!("Invalid cursor y: {}", parts[1]))?;
+    let history_size = parts[2]
+        .parse()
+        .map_err(|_| format!("Invalid history_size: {}", parts[2]))?;
+    Ok(TmuxCursorPosition { x, y, history_size })
 }

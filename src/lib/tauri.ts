@@ -5,16 +5,23 @@ import type {
   DashboardData,
   DiffType,
   GitInfo,
+  Priority,
   Settings,
   SetupStatus,
+  TmuxCursorPosition,
   TmuxPane,
   TmuxPaneSize,
 } from '@/types';
 
 // Commands
 export const getDashboardData = () => invoke<DashboardData>('get_dashboard_data');
-export const removeSession = (projectDir: string) => invoke('remove_session', { projectDir });
+export const removeSession = (sessionKey: string) => invoke('remove_session', { sessionKey });
+export const renameSession = (sessionKey: string, newName: string) =>
+  invoke('rename_session', { sessionKey, newName });
 export const clearAllSessions = () => invoke('clear_all_sessions');
+export const saveNotes = (notes: string) => invoke('save_notes', { notes });
+export const setSessionPriority = (sessionKey: string, priority: Priority) =>
+  invoke('set_session_priority', { sessionKey, priority });
 export const getSettings = () => invoke<Settings>('get_settings');
 export const getRepoGitInfo = (projectDir: string) =>
   invoke<GitInfo>('get_repo_git_info', { projectDir });
@@ -68,4 +75,6 @@ export const tmuxSendKeys = (paneId: string, keys: string) =>
   invoke('tmux_send_keys', { paneId, keys });
 export const tmuxGetPaneSize = (paneId: string) =>
   invoke<TmuxPaneSize>('tmux_get_pane_size', { paneId });
+export const tmuxGetCursorPosition = (paneId: string) =>
+  invoke<TmuxCursorPosition>('tmux_get_cursor_position', { paneId });
 export const openTmuxViewer = (paneId: string) => invoke('open_tmux_viewer', { paneId });

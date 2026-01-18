@@ -4,6 +4,7 @@ import { useAppContext } from '@/context/useAppContext';
 import { useWindowOpacity } from '@/hooks/useWindowOpacity';
 import { useWindowDrag } from '@/hooks/useWindowDrag';
 import { Header } from '@/components/Header';
+import { Notes } from '@/components/Notes';
 import { SessionList } from '@/components/SessionList';
 import { SetupModal } from '@/components/SetupModal';
 import { TmuxViewer } from '@/components/TmuxViewer';
@@ -54,6 +55,7 @@ const Dashboard = () => {
 
   return (
     <div className="container bg-bg-primary h-screen rounded-xl max-w-[900px] mx-auto flex flex-col p-2.5">
+      <Notes initialNotes={dashboardData.notes} />
       <Header sessions={dashboardData.sessions} onRefresh={refreshData} />
       <SessionList sessions={dashboardData.sessions} />
     </div>

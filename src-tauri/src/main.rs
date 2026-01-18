@@ -29,9 +29,10 @@ use tauri_plugin_log::RotationStrategy;
 use commands::{
     check_claude_settings, clear_all_sessions, get_always_on_top, get_dashboard_data,
     get_repo_git_info, get_settings, get_setup_status, install_hook, open_claude_settings,
-    open_diff, open_tmux_viewer, remove_session, set_always_on_top, set_opacity_active,
-    set_opacity_inactive, set_window_size_for_setup, tmux_capture_pane, tmux_get_pane_size,
-    tmux_is_available, tmux_list_panes, tmux_send_keys,
+    open_diff, open_tmux_viewer, remove_session, rename_session, save_notes, set_always_on_top,
+    set_opacity_active, set_opacity_inactive, set_session_priority, set_window_size_for_setup,
+    tmux_capture_pane, tmux_get_cursor_position, tmux_get_pane_size, tmux_is_available,
+    tmux_list_panes, tmux_send_keys,
 };
 use constants::{ICON_NORMAL, MINI_VIEW_HEIGHT, MINI_VIEW_WIDTH};
 use events::drain_events_queue;
@@ -157,7 +158,10 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             get_dashboard_data,
             remove_session,
+            rename_session,
             clear_all_sessions,
+            save_notes,
+            set_session_priority,
             get_always_on_top,
             set_always_on_top,
             get_settings,
@@ -177,6 +181,7 @@ fn main() {
             tmux_capture_pane,
             tmux_send_keys,
             tmux_get_pane_size,
+            tmux_get_cursor_position,
             open_tmux_viewer
         ])
         .setup(move |app| {
@@ -200,6 +205,7 @@ fn main() {
                     state_guard.sessions = restored.sessions;
                     state_guard.recent_events = restored.recent_events;
                     state_guard.cached_paths = restored.cached_paths.clone();
+                    state_guard.notes = restored.notes;
                     // Also set the cached tmux path in the tmux module
                     tmux::set_cached_tmux_path(&restored.cached_paths.tmux_path);
                 }

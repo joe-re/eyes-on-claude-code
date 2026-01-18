@@ -11,6 +11,8 @@ pub struct PersistedRuntimeState {
     pub recent_events: VecDeque<EventInfo>,
     #[serde(default)]
     pub cached_paths: CachedPaths,
+    #[serde(default)]
+    pub notes: String,
 }
 
 fn get_runtime_state_file(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
@@ -45,6 +47,7 @@ pub fn save_runtime_state(app: &tauri::AppHandle, state: &AppState) {
         sessions: state.sessions.clone(),
         recent_events: state.recent_events.clone(),
         cached_paths: state.cached_paths.clone(),
+        notes: state.notes.clone(),
     };
 
     let content = match serde_json::to_string_pretty(&persisted) {

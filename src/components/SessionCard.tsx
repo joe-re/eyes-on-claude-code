@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { SessionInfo, GitInfo } from '@/types';
+import type { SessionInfo, GitInfo, Priority } from '@/types';
 import { getStatusEmoji, getStatusClass, formatRelativeTime } from '@/lib/utils';
 import {
   removeSession,
+  renameSession,
   getRepoGitInfo,
   openDiff,
   openTmuxViewer,
+  setSessionPriority,
   type DiffType,
 } from '@/lib/tauri';
 import { ChevronDownIcon } from './icons';
@@ -23,10 +25,16 @@ export const SessionCard = ({ session }: SessionCardProps) => {
   const [isLoadingGit, setIsLoadingGit] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [relativeTime, setRelativeTime] = useState(() => formatRelativeTime(session.last_event));
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState('');
   const isLoadingGitRef = useRef(false);
   const lastFocusFetchTimeRef = useRef(0);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const statusClass = getStatusClass(session.status);
+  const displayName = session.custom_name
+    ? `${session.project_name}/${session.custom_name}`
+    : session.project_name;
 
   // Update relative time display periodically (every 60 seconds)
   useEffect(() => {
@@ -47,11 +55,45 @@ export const SessionCard = ({ session }: SessionCardProps) => {
     }
   }, [error]);
 
+  const projectKey = session.project_dir || session.project_name;
+  const sessionKey = session.tmux_pane ? `${projectKey}:${session.tmux_pane}` : projectKey;
+
   const handleRemove = async () => {
     try {
-      await removeSession(session.project_dir);
+      await removeSession(sessionKey);
     } catch (error) {
       console.error('Failed to remove session:', error);
+    }
+  };
+
+  const handleStartEdit = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditName(session.custom_name || session.project_name);
+    setIsEditing(true);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  };
+
+  const handleSaveEdit = async () => {
+    const trimmedName = editName.trim();
+    if (trimmedName && trimmedName !== session.custom_name) {
+      try {
+        await renameSession(sessionKey, trimmedName);
+      } catch (err) {
+        console.error('Failed to rename session:', err);
+      }
+    }
+    setIsEditing(false);
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditing(false);
+  };
+
+  const handleEditKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleSaveEdit();
+    } else if (e.key === 'Escape') {
+      handleCancelEdit();
     }
   };
 
@@ -130,6 +172,17 @@ export const SessionCard = ({ session }: SessionCardProps) => {
     }
   };
 
+  const handlePriorityChange = async (priority: Priority) => {
+    try {
+      setError(null);
+      await setSessionPriority(sessionKey, priority);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setError(`Failed to set priority: ${message}`);
+      console.error('Failed to set priority:', err);
+    }
+  };
+
   const borderColor = {
     waiting: 'border-l-4 border-warning',
     completed: 'border-l-4 border-info',
@@ -144,7 +197,46 @@ export const SessionCard = ({ session }: SessionCardProps) => {
       <div className="flex items-center p-2 gap-2 cursor-pointer" onClick={handleToggleExpand}>
         <div className="text-base w-6 shrink-0 text-center">{getStatusEmoji(session.status)}</div>
         <div className="flex-1 min-w-0 overflow-hidden">
-          <div className="font-semibold truncate text-xs">{session.project_name}</div>
+          <div className="flex items-center gap-1">
+            {isEditing ? (
+              <input
+                ref={inputRef}
+                type="text"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                onBlur={handleSaveEdit}
+                onKeyDown={handleEditKeyDown}
+                onClick={(e) => e.stopPropagation()}
+                className="font-semibold text-xs bg-bg-card border border-text-secondary/30 rounded px-1 py-0.5 w-full outline-none focus:border-info"
+              />
+            ) : (
+              <>
+                <span className="font-semibold truncate text-xs">{displayName}</span>
+                {session.priority === 'high' && (
+                  <span className="text-[0.5rem] text-red-400 bg-red-400/10 px-1 rounded shrink-0">
+                    HIGH
+                  </span>
+                )}
+                {session.priority === 'low' && (
+                  <span className="text-[0.5rem] text-blue-300 bg-blue-400/10 px-1 rounded shrink-0">
+                    LOW
+                  </span>
+                )}
+                {session.priority === 'operation' && (
+                  <span className="text-[0.5rem] text-yellow-400 bg-yellow-400/10 px-1 rounded shrink-0">
+                    OPS
+                  </span>
+                )}
+                <button
+                  onClick={handleStartEdit}
+                  className="text-text-secondary hover:text-white text-[0.5rem] shrink-0 px-1"
+                  title="Edit name"
+                >
+                  ✏️
+                </button>
+              </>
+            )}
+          </div>
           <div className="font-mono text-text-secondary truncate text-[0.5rem]">
             {session.project_dir}
           </div>
@@ -155,6 +247,18 @@ export const SessionCard = ({ session }: SessionCardProps) => {
             </div>
           )}
         </div>
+        {session.tmux_pane && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleOpenTmuxViewer();
+            }}
+            className="text-xs font-semibold text-purple-400 hover:text-purple-300 px-24 py-1.5 bg-purple-400/10 rounded hover:bg-purple-400/20 transition-colors shrink-0"
+            title="Display TMUX session"
+          >
+            TMUX
+          </button>
+        )}
         <div
           className={`w-4 h-4 flex items-center justify-center transition-transform shrink-0 ${
             isExpanded ? 'rotate-180' : ''
@@ -178,6 +282,54 @@ export const SessionCard = ({ session }: SessionCardProps) => {
               </button>
             </div>
           )}
+
+          {/* Priority selector */}
+          <div className="flex items-center justify-between py-0.5">
+            <span className="text-text-secondary text-[0.625rem]">priority:</span>
+            <div className="flex gap-1">
+              <button
+                onClick={() => handlePriorityChange('high')}
+                className={`text-[0.625rem] px-1.5 py-0.5 rounded transition-colors ${
+                  session.priority === 'high'
+                    ? 'bg-red-400/20 text-red-400'
+                    : 'bg-bg-card text-text-secondary hover:text-white'
+                }`}
+              >
+                High
+              </button>
+              <button
+                onClick={() => handlePriorityChange('medium')}
+                className={`text-[0.625rem] px-1.5 py-0.5 rounded transition-colors ${
+                  session.priority === 'medium'
+                    ? 'bg-blue-400/20 text-blue-400'
+                    : 'bg-bg-card text-text-secondary hover:text-white'
+                }`}
+              >
+                Medium
+              </button>
+              <button
+                onClick={() => handlePriorityChange('low')}
+                className={`text-[0.625rem] px-1.5 py-0.5 rounded transition-colors ${
+                  session.priority === 'low'
+                    ? 'bg-blue-400/20 text-blue-300'
+                    : 'bg-bg-card text-text-secondary hover:text-white'
+                }`}
+              >
+                Low
+              </button>
+              <button
+                onClick={() => handlePriorityChange('operation')}
+                className={`text-[0.625rem] px-1.5 py-0.5 rounded transition-colors ${
+                  session.priority === 'operation'
+                    ? 'bg-yellow-400/20 text-yellow-400'
+                    : 'bg-bg-card text-text-secondary hover:text-white'
+                }`}
+              >
+                Ops
+              </button>
+            </div>
+          </div>
+
           {isLoadingGit ? (
             <div className="text-text-secondary text-[0.625rem]">Loading git info...</div>
           ) : gitInfo?.is_git_repo ? (
