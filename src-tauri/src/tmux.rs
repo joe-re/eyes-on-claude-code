@@ -205,3 +205,9 @@ pub fn get_cursor_position(pane_id: &str) -> Result<TmuxCursorPosition, String> 
         .map_err(|_| format!("Invalid history_size: {}", parts[2]))?;
     Ok(TmuxCursorPosition { x, y, history_size })
 }
+
+pub fn rename_session(pane_id: &str, new_name: &str) -> Result<(), String> {
+    validate_pane_id(pane_id)?;
+    run_tmux_command(&["rename-session", "-t", pane_id, new_name])?;
+    Ok(())
+}

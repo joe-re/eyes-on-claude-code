@@ -58,7 +58,23 @@ pub fn rename_session(
     app: tauri::AppHandle,
 ) -> Result<(), String> {
     let mut state_guard = state.0.lock().map_err(|_| LOCK_ERROR)?;
-    if state_guard.rename_session(&session_key, new_name) {
+
+    // Get tmux_pane before renaming in state
+    let tmux_pane = state_guard
+        .sessions
+        .get(&session_key)
+        .map(|s| s.tmux_pane.clone());
+
+    if state_guard.rename_session(&session_key, new_name.clone()) {
+        // Also rename the tmux session if tmux_pane is available
+        if let Some(pane_id) = tmux_pane {
+            if !pane_id.is_empty() {
+                if let Err(e) = tmux::rename_session(&pane_id, &new_name) {
+                    log::warn!(target: "eocc.commands", "Failed to rename tmux session: {}", e);
+                }
+            }
+        }
+
         update_tray_and_badge(&app, &state_guard);
         emit_state_update(&app, &state_guard);
         save_runtime_state(&app, &state_guard);
