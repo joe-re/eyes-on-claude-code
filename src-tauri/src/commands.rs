@@ -561,3 +561,17 @@ pub fn tmux_send_keys(pane_id: String, keys: String) -> Result<(), String> {
 pub fn tmux_get_pane_size(pane_id: String) -> Result<TmuxPaneSize, String> {
     tmux::get_pane_size(&pane_id)
 }
+
+// ============================================================================
+// Workspace commands
+// ============================================================================
+
+#[tauri::command]
+pub fn start_workspace_session(working_dir: String) -> Result<String, String> {
+    tmux::start_new_session_with_claude(&working_dir)
+}
+
+#[tauri::command]
+pub fn check_tmux_available() -> bool {
+    tmux::get_available_tmux_path().is_some()
+}

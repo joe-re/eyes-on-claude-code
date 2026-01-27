@@ -69,3 +69,8 @@ export const tmuxSendKeys = (paneId: string, keys: string) =>
 export const tmuxGetPaneSize = (paneId: string) =>
   invoke<TmuxPaneSize>('tmux_get_pane_size', { paneId });
 export const openTmuxViewer = (paneId: string) => invoke('open_tmux_viewer', { paneId });
+
+// Workspace commands
+export const startWorkspaceSession = (workingDir: string) =>
+  invoke<string>('start_workspace_session', { workingDir });
+export const checkTmuxAvailable = () => invoke<boolean>('check_tmux_available');

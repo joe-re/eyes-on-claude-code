@@ -154,3 +154,124 @@ pub fn get_pane_size(pane_id: &str) -> Result<TmuxPaneSize, String> {
         .map_err(|_| format!("Invalid height: {}", parts[1]))?;
     Ok(TmuxPaneSize { width, height })
 }
+
+fn find_system_tmux() -> Option<PathBuf> {
+    let common_paths = [
+        "/opt/homebrew/bin/tmux",
+        "/usr/local/bin/tmux",
+        "/usr/bin/tmux",
+    ];
+
+    for path in &common_paths {
+        let p = PathBuf::from(path);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+
+    if let Ok(output) = Command::new("which").arg("tmux").output() {
+        if output.status.success() {
+            let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !path_str.is_empty() {
+                let p = PathBuf::from(&path_str);
+                if p.exists() {
+                    return Some(p);
+                }
+            }
+        }
+    }
+
+    None
+}
+
+pub fn get_available_tmux_path() -> Option<PathBuf> {
+    get_tmux_path().or_else(find_system_tmux)
+}
+
+pub fn start_new_session_with_claude(working_dir: &str) -> Result<String, String> {
+    let tmux_path = get_available_tmux_path()
+        .ok_or_else(|| "tmux is not installed or not found in PATH".to_string())?;
+
+    let dir_path = std::path::Path::new(working_dir);
+    if !dir_path.exists() {
+        return Err(format!("Directory does not exist: {}", working_dir));
+    }
+    if !dir_path.is_dir() {
+        return Err(format!("Path is not a directory: {}", working_dir));
+    }
+
+    let session_name = dir_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("claude")
+        .replace('.', "_")
+        .replace(' ', "_");
+
+    let unique_session_name = format!("{}_{}", session_name, std::process::id());
+
+    #[cfg(target_os = "macos")]
+    {
+        let script = format!(
+            r#"tell application "Terminal"
+    activate
+    do script "cd '{}' && {} new-session -s '{}' claude"
+end tell"#,
+            working_dir.replace("'", "'\\''"),
+            tmux_path.display(),
+            unique_session_name
+        );
+
+        let output = Command::new("osascript")
+            .args(["-e", &script])
+            .output()
+            .map_err(|e| format!("Failed to execute AppleScript: {}", e))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("AppleScript failed: {}", stderr.trim()));
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let terminals = ["x-terminal-emulator", "gnome-terminal", "konsole", "xterm"];
+        let mut terminal_found = false;
+
+        for terminal in &terminals {
+            let cmd = format!(
+                "cd '{}' && {} new-session -s '{}' claude",
+                working_dir.replace("'", "'\\''"),
+                tmux_path.display(),
+                unique_session_name
+            );
+
+            let result = if *terminal == "gnome-terminal" {
+                Command::new(terminal)
+                    .args(["--", "bash", "-c", &cmd])
+                    .spawn()
+            } else if *terminal == "konsole" {
+                Command::new(terminal)
+                    .args(["-e", "bash", "-c", &cmd])
+                    .spawn()
+            } else {
+                Command::new(terminal).args(["-e", &cmd]).spawn()
+            };
+
+            if result.is_ok() {
+                terminal_found = true;
+                break;
+            }
+        }
+
+        if !terminal_found {
+            return Err("No suitable terminal emulator found".to_string());
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        return Err("Windows is not supported for tmux sessions".to_string());
+    }
+
+    Ok(unique_session_name)
+}

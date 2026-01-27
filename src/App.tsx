@@ -15,6 +15,7 @@ import { MinimumView } from '@/components/MinimumView';
 import { SessionList } from '@/components/SessionList';
 import { SetupModal } from '@/components/SetupModal';
 import { TmuxViewer } from '@/components/TmuxViewer';
+import { Workspaces } from '@/components/Workspaces';
 import {
   onWindowFocus,
   bringDiffWindowsToFront,
@@ -110,9 +111,12 @@ async function clampPositionToScreen(
 
 const DEBOUNCE_MS = 150;
 
+type TabType = 'sessions' | 'workspaces';
+
 const Dashboard = () => {
   const { dashboardData, settings, isLoading, refreshData } = useAppContext();
   const [isActive, setIsActive] = useState(true);
+  const [activeTab, setActiveTab] = useState<TabType>('sessions');
   const savedStateRef = useRef<SavedWindowState | null>(loadSavedWindowState());
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -269,7 +273,33 @@ const Dashboard = () => {
   return (
     <div className="container bg-bg-primary h-screen rounded-xl max-w-[900px] mx-auto flex flex-col p-2.5">
       <Header sessions={dashboardData.sessions} onRefresh={refreshData} />
-      <SessionList sessions={dashboardData.sessions} />
+      <div className="flex gap-1 mb-2">
+        <button
+          onClick={() => setActiveTab('sessions')}
+          className={`px-2 py-1 text-[0.625rem] rounded transition-colors ${
+            activeTab === 'sessions'
+              ? 'bg-accent-purple text-white'
+              : 'bg-bg-secondary text-text-secondary hover:text-text-primary'
+          }`}
+        >
+          Sessions
+        </button>
+        <button
+          onClick={() => setActiveTab('workspaces')}
+          className={`px-2 py-1 text-[0.625rem] rounded transition-colors ${
+            activeTab === 'workspaces'
+              ? 'bg-accent-purple text-white'
+              : 'bg-bg-secondary text-text-secondary hover:text-text-primary'
+          }`}
+        >
+          Workspaces
+        </button>
+      </div>
+      {activeTab === 'sessions' ? (
+        <SessionList sessions={dashboardData.sessions} />
+      ) : (
+        <Workspaces />
+      )}
     </div>
   );
 };
