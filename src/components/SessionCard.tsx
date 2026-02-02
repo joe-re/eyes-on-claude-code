@@ -164,7 +164,7 @@ export const SessionCard = ({ session }: SessionCardProps) => {
     if (!session.tmux_pane) return;
     try {
       setError(null);
-      await openTmuxViewer(session.tmux_pane);
+      await openTmuxViewer(session.tmux_pane, displayName);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(`Failed to open tmux viewer: ${message}`);

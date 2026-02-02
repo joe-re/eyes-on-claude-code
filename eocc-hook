@@ -88,7 +88,7 @@ async function main() {
   const projectDir = process.env.CLAUDE_PROJECT_DIR || "unknown";
   const projectName = basename(projectDir) || "unknown";
   const tmuxPane = process.env.TMUX_PANE || "";
-  const customNam = getTmuxSessionName();
+  const customName = getTmuxSessionName();
 
   const sessionId = getString(rawInput, "session_id", "unknown");
   const message = getString(rawInput, "message", "");

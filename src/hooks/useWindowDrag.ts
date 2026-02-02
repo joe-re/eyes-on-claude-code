@@ -39,7 +39,9 @@ export const useWindowDrag = () => {
         target.closest('button') ||
         target.closest('.remove-btn') ||
         target.closest('textarea') ||
-        target.closest('input')
+        target.closest('input') ||
+        target.closest('[draggable="true"]') ||
+        target.closest('[data-memo-tab]')
       ) {
         return;
       }

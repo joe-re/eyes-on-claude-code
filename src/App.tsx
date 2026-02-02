@@ -19,6 +19,7 @@ import type { SetupStatus } from '@/types';
 
 const Dashboard = () => {
   const { dashboardData, settings, isLoading, refreshData } = useAppContext();
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Always apply mini-view class to body
   useEffect(() => {
@@ -55,9 +56,14 @@ const Dashboard = () => {
 
   return (
     <div className="container bg-bg-primary h-screen rounded-xl max-w-[900px] mx-auto flex flex-col p-2.5">
-      <Notes initialNotes={dashboardData.notes} />
-      <Header sessions={dashboardData.sessions} onRefresh={refreshData} />
-      <SessionList sessions={dashboardData.sessions} />
+      <Notes initialTabs={dashboardData.memoTabs} initialActiveTabId={dashboardData.activeTabId} />
+      <Header
+        sessions={dashboardData.sessions}
+        onRefresh={refreshData}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+      />
+      <SessionList sessions={dashboardData.sessions} searchQuery={searchQuery} />
     </div>
   );
 };

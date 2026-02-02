@@ -5,6 +5,7 @@ import type {
   DashboardData,
   DiffType,
   GitInfo,
+  MemoTab,
   Priority,
   Settings,
   SetupStatus,
@@ -20,6 +21,8 @@ export const renameSession = (sessionKey: string, newName: string) =>
   invoke('rename_session', { sessionKey, newName });
 export const clearAllSessions = () => invoke('clear_all_sessions');
 export const saveNotes = (notes: string) => invoke('save_notes', { notes });
+export const saveMemoTabs = (tabs: MemoTab[], activeTabId: string) =>
+  invoke('save_memo_tabs', { tabs, activeTabId });
 export const setSessionPriority = (sessionKey: string, priority: Priority) =>
   invoke('set_session_priority', { sessionKey, priority });
 export const getSettings = () => invoke<Settings>('get_settings');
@@ -73,8 +76,11 @@ export const tmuxListPanes = () => invoke<TmuxPane[]>('tmux_list_panes');
 export const tmuxCapturePane = (paneId: string) => invoke<string>('tmux_capture_pane', { paneId });
 export const tmuxSendKeys = (paneId: string, keys: string) =>
   invoke('tmux_send_keys', { paneId, keys });
+export const tmuxSendLiteral = (paneId: string, text: string) =>
+  invoke('tmux_send_literal', { paneId, text });
 export const tmuxGetPaneSize = (paneId: string) =>
   invoke<TmuxPaneSize>('tmux_get_pane_size', { paneId });
 export const tmuxGetCursorPosition = (paneId: string) =>
   invoke<TmuxCursorPosition>('tmux_get_cursor_position', { paneId });
-export const openTmuxViewer = (paneId: string) => invoke('open_tmux_viewer', { paneId });
+export const openTmuxViewer = (paneId: string, sessionName: string) =>
+  invoke('open_tmux_viewer', { paneId, sessionName });

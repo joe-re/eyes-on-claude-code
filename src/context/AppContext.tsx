@@ -19,8 +19,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const checkAndPlaySounds = useCallback((sessions: SessionInfo[]) => {
     if (!soundEnabledRef.current) return;
 
+    const getSessionKey = (s: SessionInfo) => {
+      const base = s.project_dir || s.project_name;
+      return s.tmux_pane ? `${base}:${s.tmux_pane}` : base;
+    };
+
     for (const session of sessions) {
-      const key = session.project_dir || session.project_name;
+      const key = getSessionKey(session);
       const prevStatus = previousStatesRef.current.get(key);
       const currentStatus = session.status;
 
@@ -35,7 +40,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     }
 
     // Cleanup old sessions
-    const currentKeys = new Set(sessions.map((s) => s.project_dir || s.project_name));
+    const currentKeys = new Set(sessions.map(getSessionKey));
     for (const key of previousStatesRef.current.keys()) {
       if (!currentKeys.has(key)) {
         previousStatesRef.current.delete(key);

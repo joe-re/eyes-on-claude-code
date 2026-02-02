@@ -5,9 +5,11 @@ import { tmuxSendKeys } from '@/lib/tauri';
 interface HeaderProps {
   sessions: SessionInfo[];
   onRefresh: () => void;
+  searchQuery: string;
+  onSearchChange: (query: string) => void;
 }
 
-export const Header = ({ sessions, onRefresh }: HeaderProps) => {
+export const Header = ({ sessions, onRefresh, searchQuery, onSearchChange }: HeaderProps) => {
   const [isApproving, setIsApproving] = useState(false);
 
   const waitingPermissionSessions = sessions.filter(
@@ -74,11 +76,18 @@ export const Header = ({ sessions, onRefresh }: HeaderProps) => {
           </div>
         </div>
       </div>
-      <div className="flex justify-between items-center">
-        <h2 className="font-semibold text-xs">Sessions</h2>
+      <div className="flex justify-between items-center gap-2">
+        <h2 className="font-semibold text-xs shrink-0">Sessions</h2>
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => onSearchChange(e.target.value)}
+          placeholder="Search..."
+          className="flex-1 min-w-0 px-2 py-0.5 text-xs bg-bg-card text-text-primary rounded focus:outline-none focus:ring-1 focus:ring-white/20 placeholder:text-text-secondary/50"
+        />
         <button
           onClick={onRefresh}
-          className="bg-bg-card border-none text-text-primary rounded-lg cursor-pointer transition-colors hover:bg-accent py-0.5 px-2 text-[0.625rem]"
+          className="bg-bg-card border-none text-text-primary rounded-lg cursor-pointer transition-colors hover:bg-accent py-0.5 px-2 text-[0.625rem] shrink-0"
         >
           Refresh
         </button>

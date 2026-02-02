@@ -42,10 +42,18 @@ export interface EventInfo {
   tmux_pane: string;
 }
 
+export interface MemoTab {
+  id: string;
+  name: string;
+  content: string;
+}
+
 export interface DashboardData {
   sessions: SessionInfo[];
   events: EventInfo[];
   notes: string;
+  memoTabs: MemoTab[];
+  activeTabId: string;
 }
 
 export interface Settings {

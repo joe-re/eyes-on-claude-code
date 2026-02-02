@@ -11,7 +11,7 @@ use crate::git::{get_git_info, GitInfo};
 use crate::persist::save_runtime_state;
 use crate::settings::save_settings;
 use crate::setup::{self, SetupStatus};
-use crate::state::{DashboardData, ManagedState, Priority, Settings};
+use crate::state::{DashboardData, ManagedState, MemoTab, Priority, Settings};
 use crate::tmux::{self, TmuxCursorPosition, TmuxPane, TmuxPaneSize};
 use crate::tray::{emit_state_update, update_tray_and_badge};
 
@@ -92,6 +92,20 @@ pub fn save_notes(
 ) -> Result<(), String> {
     let mut state_guard = state.0.lock().map_err(|_| LOCK_ERROR)?;
     state_guard.notes = notes;
+    save_runtime_state(&app, &state_guard);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn save_memo_tabs(
+    tabs: Vec<MemoTab>,
+    active_tab_id: String,
+    state: tauri::State<'_, ManagedState>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    let mut state_guard = state.0.lock().map_err(|_| LOCK_ERROR)?;
+    state_guard.memo_tabs = tabs;
+    state_guard.active_tab_id = active_tab_id;
     save_runtime_state(&app, &state_guard);
     Ok(())
 }
@@ -571,7 +585,11 @@ pub fn open_claude_settings() -> Result<(), String> {
 // ============================================================================
 
 #[tauri::command]
-pub fn open_tmux_viewer(pane_id: String, app: tauri::AppHandle) -> Result<(), String> {
+pub fn open_tmux_viewer(
+    pane_id: String,
+    session_name: String,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
 
@@ -588,12 +606,70 @@ pub fn open_tmux_viewer(pane_id: String, app: tauri::AppHandle) -> Result<(), St
 
     let url = format!("index.html?tmux_pane={}", urlencoding::encode(&pane_id));
 
-    WebviewWindowBuilder::new(&app, &window_label, WebviewUrl::App(url.into()))
-        .title(format!("tmux - {}", pane_id))
-        .inner_size(1200.0, 800.0)
-        .center()
+    const TMUX_WIDTH: f64 = 1200.0;
+    const TMUX_HEIGHT: f64 = 800.0;
+    const GAP: f64 = 10.0;
+
+    let title = format!("{} ({})", session_name, pane_id);
+    let mut builder = WebviewWindowBuilder::new(&app, &window_label, WebviewUrl::App(url.into()))
+        .title(title)
+        .inner_size(TMUX_WIDTH, TMUX_HEIGHT)
         .transparent(true)
-        .decorations(true)
+        .decorations(true);
+
+    // Position relative to dashboard window: priority is top > bottom > right > left
+    if let Some(dashboard) = app.get_webview_window("dashboard") {
+        if let (Ok(pos), Ok(size), Some(monitor)) = (
+            dashboard.outer_position(),
+            dashboard.outer_size(),
+            dashboard.current_monitor().ok().flatten(),
+        ) {
+            let monitor_pos = monitor.position();
+            let monitor_size = monitor.size();
+            let screen_x = monitor_pos.x as f64;
+            let screen_y = monitor_pos.y as f64;
+            let screen_w = monitor_size.width as f64;
+            let screen_h = monitor_size.height as f64;
+
+            let dash_x = pos.x as f64;
+            let dash_y = pos.y as f64;
+            let dash_w = size.width as f64;
+            let dash_h = size.height as f64;
+
+            // Try top
+            let top_y = dash_y - TMUX_HEIGHT - GAP;
+            if top_y >= screen_y {
+                let x = dash_x + (dash_w - TMUX_WIDTH) / 2.0;
+                builder = builder.position(x.max(screen_x), top_y);
+            }
+            // Try bottom
+            else if dash_y + dash_h + GAP + TMUX_HEIGHT <= screen_y + screen_h {
+                let x = dash_x + (dash_w - TMUX_WIDTH) / 2.0;
+                let y = dash_y + dash_h + GAP;
+                builder = builder.position(x.max(screen_x), y);
+            }
+            // Try right
+            else if dash_x + dash_w + GAP + TMUX_WIDTH <= screen_x + screen_w {
+                let x = dash_x + dash_w + GAP;
+                builder = builder.position(x, dash_y.max(screen_y));
+            }
+            // Try left
+            else if dash_x - TMUX_WIDTH - GAP >= screen_x {
+                let x = dash_x - TMUX_WIDTH - GAP;
+                builder = builder.position(x, dash_y.max(screen_y));
+            }
+            // Fallback: center
+            else {
+                builder = builder.center();
+            }
+        } else {
+            builder = builder.center();
+        }
+    } else {
+        builder = builder.center();
+    }
+
+    builder
         .build()
         .map_err(|e| format!("Failed to create tmux viewer window: {}", e))?;
 
@@ -618,6 +694,11 @@ pub fn tmux_capture_pane(pane_id: String) -> Result<String, String> {
 #[tauri::command]
 pub fn tmux_send_keys(pane_id: String, keys: String) -> Result<(), String> {
     tmux::send_keys(&pane_id, &keys)
+}
+
+#[tauri::command]
+pub fn tmux_send_literal(pane_id: String, text: String) -> Result<(), String> {
+    tmux::send_literal(&pane_id, &text)
 }
 
 #[tauri::command]

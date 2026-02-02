@@ -1,17 +1,15 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
+import { listen } from '@tauri-apps/api/event';
 import { AnsiUp } from 'ansi_up';
-import { tmuxCapturePane, tmuxSendKeys, tmuxGetPaneSize, tmuxGetCursorPosition } from '@/lib/tauri';
+import { tmuxCapturePane, tmuxSendKeys, tmuxSendLiteral, tmuxGetPaneSize, tmuxGetCursorPosition } from '@/lib/tauri';
 
 const POLLING_INTERVAL = 500;
-// Approximate width of monospace character at text-sm (14px) with font-mono
 const CHAR_WIDTH = 9.5;
 const WINDOW_HEIGHT = 800;
 const WINDOW_PADDING = 80;
 const MIN_WINDOW_WIDTH = 1000;
 const MAX_WINDOW_WIDTH = 2000;
-// Delay before sending typed text to allow IME composition to start
-const IME_DETECTION_DELAY = 50;
 
 interface TmuxViewerProps {
   paneId: string;
@@ -24,16 +22,13 @@ export const TmuxViewer = ({ paneId }: TmuxViewerProps) => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isFadedIn, setIsFadedIn] = useState(false);
-  const [inputValue, setInputValue] = useState('');
-  const [isComposing, setIsComposing] = useState(false);
+  const [inputBuffer, setInputBuffer] = useState('');
+  const [composingText, setComposingText] = useState('');
   const contentRef = useRef<HTMLPreElement>(null);
   const prevContentRef = useRef<string>('');
   const inputRef = useRef<HTMLInputElement>(null);
   const isComposingRef = useRef(false);
-  const justComposedRef = useRef(false);
   const isMountedRef = useRef(true);
-  const flushTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const pendingTextRef = useRef('');
   const userScrolledUpRef = useRef(false);
 
   const ansiUp = useMemo(() => {
@@ -70,19 +65,31 @@ export const TmuxViewer = ({ paneId }: TmuxViewerProps) => {
     }
   }, [paneId]);
 
-  const flushPendingText = useCallback(async () => {
-    const text = pendingTextRef.current;
-    if (text && !isComposingRef.current) {
+  const sendKeysToTmux = useCallback(
+    async (keys: string) => {
+      if (!keys) return;
       try {
-        await tmuxSendKeys(paneId, text);
+        await tmuxSendKeys(paneId, keys);
+        loadContent().catch(console.error);
+      } catch (err) {
+        console.error('Failed to send keys:', err);
+      }
+    },
+    [paneId, loadContent]
+  );
+
+  const sendLiteralToTmux = useCallback(
+    async (text: string) => {
+      if (!text) return;
+      try {
+        await tmuxSendLiteral(paneId, text);
         loadContent().catch(console.error);
       } catch (err) {
         console.error('Failed to send text:', err);
       }
-    }
-    pendingTextRef.current = '';
-    setInputValue('');
-  }, [paneId, loadContent]);
+    },
+    [paneId, loadContent]
+  );
 
   const handleClose = async () => {
     try {
@@ -94,8 +101,8 @@ export const TmuxViewer = ({ paneId }: TmuxViewerProps) => {
 
   const handleKeyDown = useCallback(
     async (e: KeyboardEvent) => {
-      // Ignore during IME composition or right after composition end
-      if (isComposingRef.current || e.isComposing || justComposedRef.current) {
+      // Ignore during IME composition
+      if (isComposingRef.current || e.isComposing) {
         return;
       }
 
@@ -122,8 +129,8 @@ export const TmuxViewer = ({ paneId }: TmuxViewerProps) => {
         return;
       }
 
-      // 'c' key copies selected text
-      if (e.key.toLowerCase() === 'c' && !e.metaKey && !e.ctrlKey) {
+      // 'c' key copies selected text (only if no buffer)
+      if (e.key.toLowerCase() === 'c' && !e.metaKey && !e.ctrlKey && !inputBuffer) {
         const selection = window.getSelection();
         if (selection && selection.toString()) {
           navigator.clipboard.writeText(selection.toString()).catch(console.error);
@@ -135,34 +142,54 @@ export const TmuxViewer = ({ paneId }: TmuxViewerProps) => {
       if (e.ctrlKey && e.key.length === 1) {
         e.preventDefault();
         const tmuxKey = `C-${e.key.toLowerCase()}`;
-        try {
-          await tmuxSendKeys(paneId, tmuxKey);
-          loadContent().catch(console.error);
-        } catch (err) {
-          console.error('Failed to send key:', err);
+        await sendKeysToTmux(tmuxKey);
+        return;
+      }
+
+      // Enter - send buffered text or Enter key
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        if (inputBuffer) {
+          await sendLiteralToTmux(inputBuffer);
+          setInputBuffer('');
+        } else {
+          await sendKeysToTmux('Enter');
         }
         return;
       }
 
-      // Shift+Enter sends literal newline for Claude Code multi-line input
+      // Shift+Enter sends literal newline
       if (e.shiftKey && e.key === 'Enter') {
         e.preventDefault();
-        try {
-          // Send Ctrl+V followed by Ctrl+J to insert literal newline
-          await tmuxSendKeys(paneId, 'C-v');
-          await tmuxSendKeys(paneId, 'C-j');
-          loadContent().catch(console.error);
-        } catch (err) {
-          console.error('Failed to send newline:', err);
+        await sendKeysToTmux('C-v');
+        await sendKeysToTmux('C-j');
+        return;
+      }
+
+      // Escape - clear buffer or send Escape
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        if (inputBuffer) {
+          setInputBuffer('');
+        } else {
+          await sendKeysToTmux('Escape');
         }
         return;
       }
 
-      // Handle special keys
+      // Backspace - remove last character from buffer or send Backspace
+      if (e.key === 'Backspace') {
+        e.preventDefault();
+        if (inputBuffer) {
+          setInputBuffer((prev) => prev.slice(0, -1));
+        } else {
+          await sendKeysToTmux('BSpace');
+        }
+        return;
+      }
+
+      // Handle other special keys (only when buffer is empty)
       const specialKeyMap: Record<string, string> = {
-        Enter: 'Enter',
-        Escape: 'Escape',
-        Backspace: 'BSpace',
         Tab: 'Tab',
         ArrowUp: 'Up',
         ArrowDown: 'Down',
@@ -190,24 +217,20 @@ export const TmuxViewer = ({ paneId }: TmuxViewerProps) => {
 
       if (specialKeyMap[e.key]) {
         e.preventDefault();
-        try {
-          await tmuxSendKeys(paneId, specialKeyMap[e.key]);
-          loadContent().catch(console.error);
-        } catch (err) {
-          console.error('Failed to send key:', err);
+        if (!inputBuffer) {
+          await sendKeysToTmux(specialKeyMap[e.key]);
         }
         return;
       }
 
-      // For regular character keys (single characters), let them go to the hidden input
-      // This allows IME composition to work properly
-      if (e.key.length === 1) {
+      // Regular character keys - let hidden input handle it for IME support
+      if (e.key.length === 1 && !e.metaKey && !e.ctrlKey) {
         inputRef.current?.focus();
-        // Don't prevent default - let the input receive the keystroke
+        // Don't preventDefault - let the input receive the keystroke
         return;
       }
     },
-    [paneId, loadContent]
+    [inputBuffer, sendKeysToTmux, sendLiteralToTmux]
   );
 
   const handleCopy = useCallback((e: ClipboardEvent) => {
@@ -219,71 +242,41 @@ export const TmuxViewer = ({ paneId }: TmuxViewerProps) => {
   }, []);
 
   const handleCompositionStart = useCallback(() => {
-    // Cancel any pending text flush when IME composition starts
-    if (flushTimeoutRef.current) {
-      clearTimeout(flushTimeoutRef.current);
-      flushTimeoutRef.current = null;
-    }
-    pendingTextRef.current = '';
     isComposingRef.current = true;
-    setIsComposing(true);
   }, []);
 
   const handleCompositionEnd = useCallback(
-    async (e: React.CompositionEvent<HTMLInputElement>) => {
+    (e: React.CompositionEvent<HTMLInputElement>) => {
       isComposingRef.current = false;
-      setIsComposing(false);
-      justComposedRef.current = true;
+      setComposingText('');
 
-      // Send the composed text to tmux as a single string
       const text = e.data;
       if (text) {
-        try {
-          await tmuxSendKeys(paneId, text);
-          // Refresh immediately after sending composed text
-          loadContent().catch(console.error);
-        } catch (err) {
-          console.error('Failed to send composed text:', err);
-        }
+        setInputBuffer((prev) => prev + text);
       }
-
-      // Clear input
-      setInputValue('');
-
-      // Delay to prevent the Enter key from compositionend being processed by handleKeyDown.
-      // 100ms is sufficient to skip the keydown event that immediately follows compositionend.
-      setTimeout(() => {
-        justComposedRef.current = false;
-      }, 100);
+      // Clear the input after composition
+      if (inputRef.current) {
+        inputRef.current.value = '';
+      }
     },
-    [paneId, loadContent]
+    []
   );
 
   const handleInputChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      const newValue = e.target.value;
-      setInputValue(newValue);
-
-      // If composing, let composition handle it
+      const value = e.target.value;
+      // During IME composition, show the composing text
       if (isComposingRef.current) {
+        setComposingText(value);
         return;
       }
-
-      // Accumulate text
-      pendingTextRef.current = newValue;
-
-      // Clear existing timeout
-      if (flushTimeoutRef.current) {
-        clearTimeout(flushTimeoutRef.current);
+      // For non-IME input (English), add to buffer and clear input
+      if (value) {
+        setInputBuffer((prev) => prev + value);
+        e.target.value = '';
       }
-
-      // Set timeout to flush - this gives IME a chance to start composition
-      flushTimeoutRef.current = setTimeout(() => {
-        flushPendingText();
-        flushTimeoutRef.current = null;
-      }, IME_DETECTION_DELAY);
     },
-    [flushPendingText]
+    []
   );
 
   const handlePaste = useCallback(
@@ -291,29 +284,20 @@ export const TmuxViewer = ({ paneId }: TmuxViewerProps) => {
       const text = e.clipboardData?.getData('text/plain');
       if (text) {
         e.preventDefault();
-        try {
-          await tmuxSendKeys(paneId, text);
-          loadContent().catch(console.error);
-        } catch (err) {
-          console.error('Failed to paste text:', err);
-        }
+        // Add pasted text to buffer
+        setInputBuffer((prev) => prev + text);
       }
     },
-    [paneId, loadContent]
+    []
   );
 
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
-      // Clear any pending text flush on unmount
-      if (flushTimeoutRef.current) {
-        clearTimeout(flushTimeoutRef.current);
-      }
     };
   }, []);
 
-  // Get pane size and resize window width to match
   useEffect(() => {
     const resizeWindowToPane = async () => {
       try {
@@ -344,7 +328,6 @@ export const TmuxViewer = ({ paneId }: TmuxViewerProps) => {
     return () => window.removeEventListener('copy', handleCopy);
   }, [handleCopy]);
 
-  // Refocus hidden input when window gains focus (for IME support)
   useEffect(() => {
     const handleWindowFocus = () => {
       inputRef.current?.focus();
@@ -353,7 +336,34 @@ export const TmuxViewer = ({ paneId }: TmuxViewerProps) => {
     return () => window.removeEventListener('focus', handleWindowFocus);
   }, []);
 
-  // Refocus hidden input on any click within the window
+  // Handle file drag and drop
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let lastDropTime = 0;
+
+    listen<{ paths: string[] }>('tauri://drag-drop', (event) => {
+      // Debounce: ignore drops within 500ms of last drop
+      const now = Date.now();
+      if (now - lastDropTime < 500) {
+        return;
+      }
+      lastDropTime = now;
+
+      const paths = event.payload.paths;
+      if (paths && paths.length > 0) {
+        // Add file paths to input buffer
+        const pathsText = paths.join(' ');
+        setInputBuffer((prev) => (prev ? prev + ' ' + pathsText : pathsText));
+      }
+    }).then((fn) => {
+      unlisten = fn;
+    });
+
+    return () => {
+      unlisten?.();
+    };
+  }, []);
+
   const handleContainerClick = useCallback(() => {
     inputRef.current?.focus();
   }, []);
@@ -374,6 +384,9 @@ export const TmuxViewer = ({ paneId }: TmuxViewerProps) => {
       contentRef.current.scrollTop = contentRef.current.scrollHeight;
     }
   }, [content]);
+
+  // Show buffer in overlay
+  const showOverlay = inputBuffer || composingText;
 
   return (
     <div
@@ -431,10 +444,14 @@ export const TmuxViewer = ({ paneId }: TmuxViewerProps) => {
         )}
       </div>
 
-      {/* IME composition overlay - only shown during composition */}
-      {isComposing && inputValue && (
+      {/* Input buffer overlay */}
+      {showOverlay && (
         <div className="absolute bottom-12 left-2 px-3 py-2 bg-cyan-900/90 text-cyan-200 text-sm font-mono rounded shadow-lg">
-          {inputValue}
+          {inputBuffer}
+          {composingText && (
+            <span className="border-b border-cyan-400">{composingText}</span>
+          )}
+          <span className="animate-pulse">|</span>
         </div>
       )}
 
@@ -447,11 +464,10 @@ export const TmuxViewer = ({ paneId }: TmuxViewerProps) => {
         Close
       </button>
 
-      {/* Hidden input for IME and text input */}
+      {/* Hidden input for IME composition */}
       <input
         ref={inputRef}
         type="text"
-        value={inputValue}
         onChange={handleInputChange}
         onCompositionStart={handleCompositionStart}
         onCompositionEnd={handleCompositionEnd}

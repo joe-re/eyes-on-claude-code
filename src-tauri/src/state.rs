@@ -97,10 +97,20 @@ impl SessionStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoTab {
+    pub id: String,
+    pub name: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DashboardData {
     pub sessions: Vec<SessionInfo>,
     pub events: Vec<EventInfo>,
     pub notes: String,
+    pub memo_tabs: Vec<MemoTab>,
+    pub active_tab_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -168,13 +178,15 @@ impl CachedPaths {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct AppState {
     pub sessions: HashMap<String, SessionInfo>,
     pub recent_events: VecDeque<EventInfo>,
     pub settings: Settings,
     pub cached_paths: CachedPaths,
     pub notes: String,
+    pub memo_tabs: Vec<MemoTab>,
+    pub active_tab_id: String,
 }
 
 impl AppState {
@@ -205,6 +217,8 @@ impl AppState {
             sessions,
             events: self.recent_events.iter().cloned().collect(),
             notes: self.notes.clone(),
+            memo_tabs: self.memo_tabs.clone(),
+            active_tab_id: self.active_tab_id.clone(),
         }
     }
 

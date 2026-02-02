@@ -14,6 +14,7 @@ mod tmux;
 mod tray;
 
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
+use std::time::Duration;
 use std::fs;
 use std::sync::{Arc, Mutex};
 use tauri::{
@@ -29,10 +30,10 @@ use tauri_plugin_log::RotationStrategy;
 use commands::{
     check_claude_settings, clear_all_sessions, get_always_on_top, get_dashboard_data,
     get_repo_git_info, get_settings, get_setup_status, install_hook, open_claude_settings,
-    open_diff, open_tmux_viewer, remove_session, rename_session, save_notes, set_always_on_top,
-    set_opacity_active, set_opacity_inactive, set_session_priority, set_window_size_for_setup,
-    tmux_capture_pane, tmux_get_cursor_position, tmux_get_pane_size, tmux_is_available,
-    tmux_list_panes, tmux_send_keys,
+    open_diff, open_tmux_viewer, remove_session, rename_session, save_memo_tabs, save_notes,
+    set_always_on_top, set_opacity_active, set_opacity_inactive, set_session_priority,
+    set_window_size_for_setup, tmux_capture_pane, tmux_get_cursor_position, tmux_get_pane_size,
+    tmux_is_available, tmux_list_panes, tmux_send_keys, tmux_send_literal,
 };
 use constants::{ICON_NORMAL, MINI_VIEW_HEIGHT, MINI_VIEW_WIDTH};
 use events::drain_events_queue;
@@ -99,7 +100,9 @@ fn start_file_watcher(app_handle: tauri::AppHandle, state: Arc<Mutex<AppState>>)
 
         let (tx, rx) = std::sync::mpsc::channel();
 
-        let mut watcher = match RecommendedWatcher::new(tx, Config::default()) {
+        let config = Config::default()
+            .with_poll_interval(Duration::from_millis(500));
+        let mut watcher = match RecommendedWatcher::new(tx, config) {
             Ok(w) => w,
             Err(e) => {
                 eprintln!("[eocc] Failed to create file watcher: {:?}", e);
@@ -112,19 +115,43 @@ fn start_file_watcher(app_handle: tauri::AppHandle, state: Arc<Mutex<AppState>>)
             return;
         }
 
+        let mut last_process_time = std::time::Instant::now();
+        let debounce_duration = Duration::from_millis(100);
+
         loop {
             match rx.recv() {
                 Ok(_event) => {
-                    let Ok(mut state_guard) = state.lock() else {
-                        eprintln!("[eocc] Failed to acquire state lock in watcher");
+                    // Debounce: skip if processed recently
+                    let now = std::time::Instant::now();
+                    if now.duration_since(last_process_time) < debounce_duration {
+                        // Drain any pending events to avoid backlog
+                        while rx.try_recv().is_ok() {}
                         continue;
-                    };
-                    let new_events = drain_events_queue(&app_handle, &mut state_guard);
+                    }
+                    last_process_time = now;
 
-                    if !new_events.is_empty() {
-                        update_tray_and_badge(&app_handle, &state_guard);
-                        emit_state_update(&app_handle, &state_guard);
-                        save_runtime_state(&app_handle, &state_guard);
+                    // Collect data while holding the lock, then release before UI updates
+                    let update_info = {
+                        let Ok(mut state_guard) = state.try_lock() else {
+                            continue;
+                        };
+                        let new_events = drain_events_queue(&app_handle, &mut state_guard);
+                        if new_events.is_empty() {
+                            None
+                        } else {
+                            // Clone necessary data before releasing lock
+                            let dashboard_data = state_guard.to_dashboard_data();
+                            let state_clone = state_guard.clone();
+                            save_runtime_state(&app_handle, &state_guard);
+                            Some((dashboard_data, state_clone))
+                        }
+                    };
+                    // Lock is released here
+
+                    // Now safe to call UI functions that may need main thread
+                    if let Some((dashboard_data, state_snapshot)) = update_info {
+                        update_tray_and_badge(&app_handle, &state_snapshot);
+                        let _ = app_handle.emit("state-updated", &dashboard_data);
                     }
                 }
                 Err(e) => {
@@ -161,6 +188,7 @@ fn main() {
             rename_session,
             clear_all_sessions,
             save_notes,
+            save_memo_tabs,
             set_session_priority,
             get_always_on_top,
             set_always_on_top,
@@ -180,6 +208,7 @@ fn main() {
             tmux_list_panes,
             tmux_capture_pane,
             tmux_send_keys,
+            tmux_send_literal,
             tmux_get_pane_size,
             tmux_get_cursor_position,
             open_tmux_viewer
@@ -205,7 +234,19 @@ fn main() {
                     state_guard.sessions = restored.sessions;
                     state_guard.recent_events = restored.recent_events;
                     state_guard.cached_paths = restored.cached_paths.clone();
-                    state_guard.notes = restored.notes;
+                    state_guard.notes = restored.notes.clone();
+                    // Migrate old notes to memo_tabs if needed
+                    if restored.memo_tabs.is_empty() && !restored.notes.is_empty() {
+                        state_guard.memo_tabs = vec![state::MemoTab {
+                            id: "tab-1".to_string(),
+                            name: "Tab 1".to_string(),
+                            content: restored.notes,
+                        }];
+                        state_guard.active_tab_id = "tab-1".to_string();
+                    } else {
+                        state_guard.memo_tabs = restored.memo_tabs;
+                        state_guard.active_tab_id = restored.active_tab_id;
+                    }
                     // Also set the cached tmux path in the tmux module
                     tmux::set_cached_tmux_path(&restored.cached_paths.tmux_path);
                 }

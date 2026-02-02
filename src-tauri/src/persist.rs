@@ -3,7 +3,7 @@ use std::collections::{HashMap, VecDeque};
 use std::fs;
 
 use crate::settings::get_config_dir;
-use crate::state::{AppState, CachedPaths, EventInfo, SessionInfo};
+use crate::state::{AppState, CachedPaths, EventInfo, MemoTab, SessionInfo};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PersistedRuntimeState {
@@ -13,6 +13,10 @@ pub struct PersistedRuntimeState {
     pub cached_paths: CachedPaths,
     #[serde(default)]
     pub notes: String,
+    #[serde(default)]
+    pub memo_tabs: Vec<MemoTab>,
+    #[serde(default)]
+    pub active_tab_id: String,
 }
 
 fn get_runtime_state_file(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
@@ -48,6 +52,8 @@ pub fn save_runtime_state(app: &tauri::AppHandle, state: &AppState) {
         recent_events: state.recent_events.clone(),
         cached_paths: state.cached_paths.clone(),
         notes: state.notes.clone(),
+        memo_tabs: state.memo_tabs.clone(),
+        active_tab_id: state.active_tab_id.clone(),
     };
 
     let content = match serde_json::to_string_pretty(&persisted) {

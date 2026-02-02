@@ -8,7 +8,13 @@ export interface AppContextValue {
   refreshData: () => Promise<void>;
 }
 
-export const defaultDashboardData: DashboardData = { sessions: [], events: [], notes: '' };
+export const defaultDashboardData: DashboardData = {
+  sessions: [],
+  events: [],
+  notes: '',
+  memoTabs: [],
+  activeTabId: '',
+};
 
 export const defaultSettings: Settings = {
   always_on_top: true,

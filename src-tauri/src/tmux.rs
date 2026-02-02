@@ -150,6 +150,15 @@ pub fn send_keys(pane_id: &str, keys: &str) -> Result<(), String> {
     Ok(())
 }
 
+pub fn send_literal(pane_id: &str, text: &str) -> Result<(), String> {
+    validate_pane_id(pane_id)?;
+    log::info!(target: "eocc.tmux", "send_literal: pane_id={}, text={}", pane_id, text);
+    let result = run_tmux_command(&["send-keys", "-t", pane_id, "-l", text]);
+    log::info!(target: "eocc.tmux", "send_literal result: {:?}", result);
+    result?;
+    Ok(())
+}
+
 pub fn get_pane_size(pane_id: &str) -> Result<TmuxPaneSize, String> {
     validate_pane_id(pane_id)?;
     let output = run_tmux_command(&[
