@@ -295,20 +295,12 @@ fn main() {
                 }
             }
 
-            // Hide dashboard and close all diff windows when close button is clicked
+            // Hide dashboard when close button is clicked
             let app_handle_for_close = app_handle.clone();
             dashboard_window.on_window_event(move |event| {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();
 
-                    // Close all diff windows
-                    for (label, window) in app_handle_for_close.webview_windows() {
-                        if label.starts_with("difit-") {
-                            let _ = window.close();
-                        }
-                    }
-
-                    // Hide dashboard
                     if let Some(window) = app_handle_for_close.get_webview_window("dashboard") {
                         let _ = window.hide();
                     }
@@ -526,17 +518,12 @@ fn main() {
             Ok(())
         })
         .on_window_event(move |window, event| {
-            // Track window focus to update dashboard opacity
             if let tauri::WindowEvent::Focused(focused) = event {
                 let label = window.label();
                 let app = window.app_handle();
 
                 if label == "dashboard" {
-                    // Dashboard focus changed - emit event directly
                     let _ = app.emit_to("dashboard", "dashboard-active", *focused);
-                } else if label.starts_with("difit-") && *focused {
-                    // A difit window gained focus - dashboard should be inactive
-                    let _ = app.emit_to("dashboard", "dashboard-active", false);
                 }
             }
         })

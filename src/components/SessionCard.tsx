@@ -10,7 +10,7 @@ import {
   type DiffType,
 } from '@/lib/tauri';
 import { ChevronDownIcon } from './icons';
-import { DiffButton } from './DiffButton';
+import { DiffButton, type DiffButtonState } from './DiffButton';
 import { BranchCombobox } from './BranchCombobox';
 
 const FOCUS_REFRESH_MIN_INTERVAL = 5000;
@@ -27,6 +27,7 @@ export const SessionCard = ({ session }: SessionCardProps) => {
   const [relativeTime, setRelativeTime] = useState(() => formatRelativeTime(session.last_event));
   const [branches, setBranches] = useState<string[]>([]);
   const [selectedBaseBranch, setSelectedBaseBranch] = useState<string>('');
+  const [loadingDiffType, setLoadingDiffType] = useState<DiffType | null>(null);
   const isLoadingGitRef = useRef(false);
   const lastFocusFetchTimeRef = useRef(0);
 
@@ -131,8 +132,10 @@ export const SessionCard = ({ session }: SessionCardProps) => {
   }, [isExpanded, fetchGitInfo]);
 
   const handleDiffClick = async (type: DiffType) => {
+    if (loadingDiffType) return;
     try {
       setError(null);
+      setLoadingDiffType(type);
       const baseBranch =
         type === 'branch' ? selectedBaseBranch || gitInfo?.default_branch : undefined;
       await openDiff(session.project_dir, type, baseBranch);
@@ -140,7 +143,14 @@ export const SessionCard = ({ session }: SessionCardProps) => {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
       console.error('Failed to open diff:', err);
+    } finally {
+      setLoadingDiffType(null);
     }
+  };
+
+  const diffButtonState = (type: DiffType): DiffButtonState => {
+    if (loadingDiffType === null) return 'idle';
+    return loadingDiffType === type ? 'loading' : 'blocked';
   };
 
   const handleOpenTmuxViewer = async () => {
@@ -220,7 +230,11 @@ export const SessionCard = ({ session }: SessionCardProps) => {
                   </span>
                 </div>
                 {gitInfo.has_unstaged_changes && (
-                  <DiffButton onClick={() => handleDiffClick('unstaged')} small />
+                  <DiffButton
+                    onClick={() => handleDiffClick('unstaged')}
+                    small
+                    state={diffButtonState('unstaged')}
+                  />
                 )}
               </div>
 
@@ -237,7 +251,11 @@ export const SessionCard = ({ session }: SessionCardProps) => {
                   </span>
                 </div>
                 {gitInfo.has_staged_changes && (
-                  <DiffButton onClick={() => handleDiffClick('staged')} small />
+                  <DiffButton
+                    onClick={() => handleDiffClick('staged')}
+                    small
+                    state={diffButtonState('staged')}
+                  />
                 )}
               </div>
 
@@ -249,7 +267,11 @@ export const SessionCard = ({ session }: SessionCardProps) => {
                     #{gitInfo.latest_commit_hash}
                   </span>
                 </div>
-                <DiffButton onClick={() => handleDiffClick('commit')} small />
+                <DiffButton
+                  onClick={() => handleDiffClick('commit')}
+                  small
+                  state={diffButtonState('commit')}
+                />
               </div>
 
               {/* Branch */}
@@ -272,7 +294,12 @@ export const SessionCard = ({ session }: SessionCardProps) => {
                     />
                   )}
                 </div>
-                <DiffButton onClick={() => handleDiffClick('branch')} small className="shrink-0" />
+                <DiffButton
+                  onClick={() => handleDiffClick('branch')}
+                  small
+                  state={diffButtonState('branch')}
+                  className="shrink-0"
+                />
               </div>
             </>
           ) : (

@@ -18,6 +18,21 @@ export const FileIcon = ({ size = 14, className = '' }: IconProps) => (
   </svg>
 );
 
+export const SpinnerIcon = ({ size = 14, className = '' }: IconProps) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    className={`animate-spin ${className}`}
+  >
+    <path d="M12 2a10 10 0 0 1 10 10" />
+  </svg>
+);
+
 export const ChevronDownIcon = ({ size = 12, className = '' }: IconProps) => (
   <svg width={size} height={size * (8 / 12)} viewBox="0 0 12 8" fill="none" className={className}>
     <path

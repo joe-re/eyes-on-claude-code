@@ -1,6 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import { getAllWindows } from '@tauri-apps/api/window';
 import type {
   DashboardData,
   DiffType,
@@ -41,21 +40,6 @@ export const onStateUpdated = (callback: (data: DashboardData) => void): Promise
 
 export const onSettingsUpdated = (callback: (settings: Settings) => void): Promise<UnlistenFn> => {
   return listen<Settings>('settings-updated', (event) => callback(event.payload));
-};
-
-export const onWindowFocus = (callback: () => void): Promise<UnlistenFn> => {
-  return listen('tauri://focus', callback);
-};
-
-// Bring all diff windows to front (without stealing focus)
-export const bringDiffWindowsToFront = async (): Promise<void> => {
-  const windows = await getAllWindows();
-  const diffWindows = windows.filter((w) => w.label.startsWith('difit-'));
-
-  for (const window of diffWindows) {
-    await window.show();
-    await window.unminimize();
-  }
 };
 
 // Tmux commands
