@@ -37,7 +37,7 @@
   "devDependencies": {
     "@eslint/js": "^9.39.2",
     "@tailwindcss/vite": "^4.1.18",
-    "@tauri-apps/cli": "^2.0.0",
+    "@tauri-apps/cli": "^2.10.1",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^5.0.0",
@@ -52,7 +52,7 @@
     "vite": "^7.0.0"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.0.0",
+    "@tauri-apps/api": "^2.10.1",
     "ansi_up": "^6.0.6",
     "open": "^11.0.0",
     "react": "^19.0.0",
