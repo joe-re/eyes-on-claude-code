@@ -1,9 +1,11 @@
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
-use std::io::Write;
+use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, Command, Stdio};
+use std::sync::mpsc;
 use std::sync::Mutex;
+use std::time::Duration;
 
 /// Default base branch for branch diff comparison
 const DEFAULT_BASE_BRANCH: &str = "main";
@@ -237,13 +239,17 @@ pub fn calculate_diff_hash(content: &[u8]) -> u64 {
 
 /// Start a difit server that opens in the system browser.
 ///
-/// difit handles port allocation automatically.
-/// The server auto-terminates when the browser tab is closed.
+/// Waits for difit to print its "server started" line so the caller
+/// can indicate readiness to the UI. difit handles port allocation
+/// automatically and auto-terminates when the browser tab is closed.
 pub fn start_difit_server(
     diff_content: Vec<u8>,
     repo_path: &str,
     npx_path: Option<&str>,
 ) -> Result<Child, String> {
+    const STARTUP_TIMEOUT: Duration = Duration::from_secs(10);
+    const STARTUP_MARKER: &str = "difit server started on";
+
     let npx_cmd = npx_path.filter(|p| !p.is_empty()).unwrap_or("npx");
 
     log::info!(target: "eocc.difit", "Starting difit with npx_cmd={}", npx_cmd);
@@ -252,7 +258,7 @@ pub fn start_difit_server(
     cmd.args(["difit"])
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .current_dir(repo_path);
 
     if let Some(path) = npx_path.filter(|p| !p.is_empty()) {
@@ -277,7 +283,34 @@ pub fn start_difit_server(
             .map_err(|e| format!("Failed to write to difit stdin: {}", e))?;
     }
 
-    log::info!(target: "eocc.difit", "Difit process spawned, browser will open automatically");
+    let stderr = difit_process
+        .stderr
+        .take()
+        .ok_or("Failed to capture difit stderr")?;
+
+    // Drain stderr in a background thread and signal once difit is ready.
+    // The thread must keep reading after the signal so the stderr pipe
+    // never fills up and blocks the child.
+    let (tx, rx) = mpsc::channel::<()>();
+    std::thread::spawn(move || {
+        let reader = BufReader::new(stderr);
+        let mut signaled = false;
+        for line in reader.lines().map_while(Result::ok) {
+            if !signaled && line.contains(STARTUP_MARKER) {
+                let _ = tx.send(());
+                signaled = true;
+            }
+        }
+    });
+
+    match rx.recv_timeout(STARTUP_TIMEOUT) {
+        Ok(()) => log::info!(target: "eocc.difit", "Difit server started"),
+        Err(_) => log::warn!(
+            target: "eocc.difit",
+            "Timed out waiting for difit startup marker after {:?}",
+            STARTUP_TIMEOUT
+        ),
+    }
 
     Ok(difit_process)
 }
