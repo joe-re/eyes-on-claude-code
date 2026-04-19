@@ -9,12 +9,7 @@ interface DiffButtonProps {
   className?: string;
 }
 
-export const DiffButton = ({
-  onClick,
-  small,
-  state = 'idle',
-  className = '',
-}: DiffButtonProps) => {
+export const DiffButton = ({ onClick, small, state = 'idle', className = '' }: DiffButtonProps) => {
   const iconSize = small ? 10 : 14;
   const loading = state === 'loading';
   const cursor = loading ? 'disabled:cursor-wait' : 'disabled:cursor-not-allowed';
