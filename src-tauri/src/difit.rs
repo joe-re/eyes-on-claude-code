@@ -11,19 +11,31 @@ use std::time::Duration;
 const DEFAULT_BASE_BRANCH: &str = "main";
 
 /// Diff types supported by the application
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum DiffType {
     /// Unstaged changes (working directory vs index)
     Unstaged,
     /// Staged changes (index vs HEAD)
     Staged,
     /// Latest commit diff (HEAD vs HEAD~1)
+    #[serde(rename = "commit")]
     LatestCommit,
     /// Branch diff (current branch vs main/master)
     Branch,
 }
 
 impl DiffType {
+    /// Stable string key used for registry lookups and logging.
+    pub fn as_key(self) -> &'static str {
+        match self {
+            DiffType::Unstaged => "unstaged",
+            DiffType::Staged => "staged",
+            DiffType::LatestCommit => "commit",
+            DiffType::Branch => "branch",
+        }
+    }
+
     /// Get the git diff arguments for this diff type
     fn git_diff_args(self, branch: Option<&str>) -> Result<Vec<String>, String> {
         match self {
@@ -48,16 +60,6 @@ impl DiffType {
 struct RegistryInner {
     processes: HashMap<String, Child>,
     diff_hashes: HashMap<String, u64>,
-}
-
-#[derive(Debug, PartialEq)]
-pub enum ProcessAction {
-    /// No running process exists, start a new one
-    StartNew,
-    /// Process was running but diff changed, old process killed
-    ReplaceExisting,
-    /// Process still running with same diff, skip
-    SkipUnchanged,
 }
 
 /// Registry to track running difit processes
@@ -86,52 +88,39 @@ impl DifitProcessRegistry {
         }
     }
 
-    /// Atomically check process liveness and diff hash, then decide action.
-    /// Kills the old process if the diff has changed.
-    pub fn check_and_update(&self, key: &str, new_hash: u64) -> ProcessAction {
+    /// Decide whether the caller should spawn a new difit process for `key`.
+    ///
+    /// Returns `false` when an existing process is still running and the diff
+    /// content is unchanged. Otherwise returns `true`, after killing any stale
+    /// process (difit auto-exits when its browser tab closes) and recording
+    /// the new hash so a subsequent identical call can short-circuit.
+    pub fn should_start(&self, key: &str, new_hash: u64) -> bool {
         match self.inner.lock() {
             Ok(mut inner) => {
-                let is_alive = if let Some(process) = inner.processes.get_mut(key) {
-                    match process.try_wait() {
-                        Ok(Some(_)) => {
-                            // Process has exited (browser tab closed)
-                            inner.processes.remove(key);
-                            inner.diff_hashes.remove(key);
-                            false
-                        }
-                        Ok(None) => true,
-                        Err(_) => {
-                            inner.processes.remove(key);
-                            inner.diff_hashes.remove(key);
-                            false
-                        }
+                let is_alive = match inner.processes.get_mut(key).map(|p| p.try_wait()) {
+                    Some(Ok(None)) => true,
+                    Some(_) => {
+                        inner.processes.remove(key);
+                        inner.diff_hashes.remove(key);
+                        false
                     }
-                } else {
-                    false
+                    None => false,
                 };
 
-                if !is_alive {
-                    inner.diff_hashes.insert(key.to_string(), new_hash);
-                    return ProcessAction::StartNew;
+                if is_alive && inner.diff_hashes.get(key).copied() == Some(new_hash) {
+                    return false;
                 }
 
-                // Process is alive, check if diff content changed
-                let old_hash = inner.diff_hashes.get(key).copied();
-                if old_hash == Some(new_hash) {
-                    return ProcessAction::SkipUnchanged;
-                }
-
-                // Diff changed: kill old process and update hash
                 if let Some(mut process) = inner.processes.remove(key) {
                     let _ = process.kill();
                     let _ = process.wait();
                 }
                 inner.diff_hashes.insert(key.to_string(), new_hash);
-                ProcessAction::ReplaceExisting
+                true
             }
             Err(e) => {
                 log::warn!(target: "eocc.difit", "Failed to lock registry: {}", e);
-                ProcessAction::StartNew
+                true
             }
         }
     }

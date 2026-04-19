@@ -5,7 +5,6 @@ use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 use crate::constants::{MINI_VIEW_HEIGHT, MINI_VIEW_WIDTH, SETUP_MODAL_HEIGHT, SETUP_MODAL_WIDTH};
 use crate::difit::{
     calculate_diff_hash, get_diff_content, start_difit_server, DiffType, DifitProcessRegistry,
-    ProcessAction,
 };
 use crate::git::{get_branches, get_git_info, GitInfo};
 use crate::persist::save_runtime_state;
@@ -188,20 +187,20 @@ pub fn get_repo_branches(project_dir: String) -> Vec<String> {
     result
 }
 
-fn generate_diff_key(project_dir: &str, diff_type: &str) -> String {
+fn generate_diff_key(project_dir: &str, diff_type: DiffType) -> String {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
 
     let mut hasher = DefaultHasher::new();
     project_dir.hash(&mut hasher);
-    diff_type.hash(&mut hasher);
+    diff_type.as_key().hash(&mut hasher);
     format!("difit-{:x}", hasher.finish())
 }
 
 #[tauri::command]
 pub fn open_diff(
     project_dir: String,
-    diff_type: String,
+    diff_type: DiffType,
     base_branch: Option<String>,
     state: tauri::State<'_, ManagedState>,
     difit_registry: tauri::State<'_, Arc<DifitProcessRegistry>>,
@@ -219,21 +218,12 @@ pub fn open_diff(
         return Err(format!("Not a git repository: {}", project_dir));
     }
 
-    let diff = match diff_type.as_str() {
-        "unstaged" => DiffType::Unstaged,
-        "staged" => DiffType::Staged,
-        "commit" => DiffType::LatestCommit,
-        "branch" => DiffType::Branch,
-        _ => return Err(format!("Unknown diff type: {}", diff_type)),
-    };
+    let key = generate_diff_key(&project_dir, diff_type);
 
-    let key = generate_diff_key(&project_dir, &diff_type);
-
-    let diff_content = get_diff_content(&project_dir, diff, base_branch.as_deref())?;
+    let diff_content = get_diff_content(&project_dir, diff_type, base_branch.as_deref())?;
     let hash = calculate_diff_hash(&diff_content);
 
-    let action = difit_registry.check_and_update(&key, hash);
-    if action == ProcessAction::SkipUnchanged {
+    if !difit_registry.should_start(&key, hash) {
         log::info!(target: "eocc.difit", "Diff unchanged, skipping (key={})", key);
         log_slow_op("open_diff(unchanged)", start.elapsed());
         return Ok(());

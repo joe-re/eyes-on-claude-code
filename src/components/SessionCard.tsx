@@ -10,7 +10,7 @@ import {
   type DiffType,
 } from '@/lib/tauri';
 import { ChevronDownIcon } from './icons';
-import { DiffButton } from './DiffButton';
+import { DiffButton, type DiffButtonState } from './DiffButton';
 import { BranchCombobox } from './BranchCombobox';
 
 const FOCUS_REFRESH_MIN_INTERVAL = 5000;
@@ -148,6 +148,11 @@ export const SessionCard = ({ session }: SessionCardProps) => {
     }
   };
 
+  const diffButtonState = (type: DiffType): DiffButtonState => {
+    if (loadingDiffType === null) return 'idle';
+    return loadingDiffType === type ? 'loading' : 'blocked';
+  };
+
   const handleOpenTmuxViewer = async () => {
     if (!session.tmux_pane) return;
     try {
@@ -228,8 +233,7 @@ export const SessionCard = ({ session }: SessionCardProps) => {
                   <DiffButton
                     onClick={() => handleDiffClick('unstaged')}
                     small
-                    loading={loadingDiffType === 'unstaged'}
-                    disabled={loadingDiffType !== null && loadingDiffType !== 'unstaged'}
+                    state={diffButtonState('unstaged')}
                   />
                 )}
               </div>
@@ -250,8 +254,7 @@ export const SessionCard = ({ session }: SessionCardProps) => {
                   <DiffButton
                     onClick={() => handleDiffClick('staged')}
                     small
-                    loading={loadingDiffType === 'staged'}
-                    disabled={loadingDiffType !== null && loadingDiffType !== 'staged'}
+                    state={diffButtonState('staged')}
                   />
                 )}
               </div>
@@ -267,8 +270,7 @@ export const SessionCard = ({ session }: SessionCardProps) => {
                 <DiffButton
                   onClick={() => handleDiffClick('commit')}
                   small
-                  loading={loadingDiffType === 'commit'}
-                  disabled={loadingDiffType !== null && loadingDiffType !== 'commit'}
+                  state={diffButtonState('commit')}
                 />
               </div>
 
@@ -295,8 +297,7 @@ export const SessionCard = ({ session }: SessionCardProps) => {
                 <DiffButton
                   onClick={() => handleDiffClick('branch')}
                   small
-                  loading={loadingDiffType === 'branch'}
-                  disabled={loadingDiffType !== null && loadingDiffType !== 'branch'}
+                  state={diffButtonState('branch')}
                   className="shrink-0"
                 />
               </div>
